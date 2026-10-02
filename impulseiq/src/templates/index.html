@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ImpulseIQ — {{ ticker }}</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131722; --panel2: #171c28; --border: #262c3a;
+    --text: #e8eaed; --muted: #8b93a7;
+    --green: #26a69a; --red: #ef5350; --amber: #d29922; --orange: #e8863c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  header {
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .brand .logo { font-size: 20px; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  header .sub { color: var(--muted); font-size: 13px; margin-left: 14px; }
+  header .right { display: flex; align-items: center; gap: 10px; }
+  .pill {
+    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--border);
+  }
+  .pill.paper { color: var(--amber); border-color: #5a4718; background: #241d0d; }
+  .status { color: var(--muted); font-size: 12px; }
+
+  .layout { display: flex; flex-wrap: wrap; }
+  #chart-wrap { position: relative; flex: 1 1 680px; min-width: 320px; }
+  #chart { width: 100%; height: 560px; }
+
+  #chart-overlay {
+    position: absolute; top: 12px; left: 16px; z-index: 3;
+    pointer-events: none; user-select: none;
+  }
+  #chart-overlay .ticker { font-size: 26px; font-weight: 700; letter-spacing: .02em; }
+  #chart-overlay .price { font-size: 15px; color: var(--muted); margin-top: 2px; }
+  #chart-overlay .price .chg-up { color: var(--green); }
+  #chart-overlay .price .chg-down { color: var(--red); }
+  .source-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    margin-top: 6px;
+  }
+  .source-badge.live { background: #14351f; color: var(--green); }
+  .source-badge.delayed { background: #3a2e12; color: var(--amber); }
+  .source-badge.fake { background: #3a1414; color: var(--red); }
+
+  #wave-status-box {
+    position: absolute; top: 90px; left: 16px; z-index: 3; max-width: 380px;
+    background: rgba(19, 23, 34, 0.88); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; font-size: 13px; line-height: 1.5;
+    pointer-events: none; user-select: none; display: none;
+  }
+  #wave-status-box b { color: var(--text); }
+  #wave-status-box .muted { color: var(--muted); }
+
+  #buffer-zone-overlay {
+    position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(232,134,60,0.28), rgba(38,166,154,0.28));
+    border-top: 1px dashed var(--orange); border-bottom: 1px dashed var(--red);
+    display: none;
+  }
+  .tier-label {
+    position: absolute; right: 8px; z-index: 3; font-size: 10.5px;
+    color: var(--text); background: rgba(19,23,34,0.85); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; pointer-events: none; white-space: nowrap;
+  }
+
+  .side {
+    flex: 0 0 360px; padding: 14px; border-left: 1px solid var(--border);
+    max-height: 560px; overflow-y: auto;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;
+  }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; justify-content: space-between; font-size: 13.5px; margin: 5px 0; }
+  .row .v { color: var(--text); font-weight: 600; }
+  .row .v.pos { color: var(--green); }
+  .row .v.neg { color: var(--red); }
+  .alert { border-radius: 6px; padding: 8px 10px; font-size: 12.5px; margin-bottom: 8px; }
+  .alert.info { background: #1b2430; color: var(--muted); }
+  .alert.warning { background: #3a2e12; color: var(--amber); border: 1px solid #5a4718; }
+  .alert.critical { background: #3a1414; color: var(--red); border: 1px solid #5a1a1a; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; }
+  .badge.valid { background: #14351f; color: var(--green); }
+  .badge.invalid { background: #3a1414; color: var(--red); }
+
+  /* order entry */
+  .order-form label { display: block; font-size: 11.5px; color: var(--muted); margin: 8px 0 3px; }
+  .order-form input, .order-form select {
+    width: 100%; background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 5px; padding: 7px 8px; font-size: 13px;
+  }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  button.buy, button.sell, button.close-pos {
+    flex: 1; border: none; border-radius: 6px; padding: 9px 0; font-weight: 700;
+    font-size: 13px; cursor: pointer; letter-spacing: .03em;
+  }
+  button.buy { background: var(--green); color: #06231f; }
+  button.sell { background: var(--red); color: #2a0a09; }
+  button.close-pos { background: #3a3f4d; color: var(--text); width: 100%; margin-top: 10px; }
+  .order-msg { font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .order-msg.err { color: var(--red); }
+  .order-msg.ok { color: var(--green); }
+
+  /* risk gauge */
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; }
+  .gauge-outer { width: 220px; height: 112px; overflow: hidden; position: relative; }
+  .gauge-inner {
+    width: 220px; height: 220px; border-radius: 50%; position: absolute; top: 0; left: 0;
+    background: conic-gradient(from -90deg,
+      #2ecc71 0deg 36deg, #a3d977 36deg 72deg, #e8863c 72deg 108deg,
+      #ef5350 108deg 144deg, #7a1414 144deg 180deg, transparent 180deg 360deg);
+  }
+  .gauge-needle {
+    position: absolute; bottom: 0; left: 108px; width: 4px; height: 96px;
+    background: var(--text); transform-origin: bottom center; transform: rotate(0deg);
+    border-radius: 2px; transition: transform 0.4s ease;
+  }
+  .gauge-hub {
+    position: absolute; bottom: -6px; left: 98px; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--panel); border: 3px solid var(--text);
+  }
+  .gauge-labels { display: flex; justify-content: space-between; width: 220px; font-size: 10px;
+    color: var(--muted); margin-top: 2px; }
+  .risk-readout { text-align: center; margin-top: 8px; }
+  .risk-readout .level { font-size: 18px; font-weight: 700; }
+  .risk-readout .caption { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .risk-readout .level.Low { color: #2ecc71; }
+  .risk-readout .level.Moderate { color: #a3d977; }
+  .risk-readout .level.High { color: #e8863c; }
+  .risk-readout .level.Red { color: #ef5350; }
+  .risk-readout .level.Extreme { color: #ff4444; }
+  .risk-readout .level.No.Position { color: var(--muted); }
+
+  /* audit log */
+  #audit-log { max-height: 220px; overflow-y: auto; }
+  .audit-entry { font-size: 11.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .audit-entry:last-child { border-bottom: none; }
+  .audit-entry .ts { color: var(--muted); margin-right: 6px; }
+  .audit-entry.info .msg { color: var(--muted); }
+  .audit-entry.warning .msg { color: var(--amber); }
+  .audit-entry.critical .msg { color: var(--red); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">⚡</span>
+    <h1>ImpulseIQ</h1>
+    <span class="sub" id="header-sub">{{ ticker }} · Real-Time Dashboard</span>
+  </div>
+  <div class="right">
+    <span class="pill paper">Paper Trading</span>
+    <span class="status" id="status">connecting…</span>
+  </div>
+</header>
+
+<div class="layout">
+  <div id="chart-wrap">
+    <div id="chart-overlay">
+      <div class="ticker" id="overlay-ticker">{{ ticker }}</div>
+      <div class="price" id="overlay-price">—</div>
+      <div id="overlay-badge"></div>
+    </div>
+    <div id="wave-status-box"></div>
+    <div id="buffer-zone-overlay"></div>
+    <div id="chart"></div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h2>Portfolio Summary</h2>
+      <div id="portfolio-panel">—</div>
+    </div>
+
+    <div class="card">
+      <h2>System Risk Gauge</h2>
+      <div class="gauge-wrap">
+        <div class="gauge-outer">
+          <div class="gauge-inner"></div>
+          <div class="gauge-needle" id="gauge-needle"></div>
+          <div class="gauge-hub"></div>
+        </div>
+        <div class="gauge-labels"><span>Low</span><span>Extreme</span></div>
+        <div class="risk-readout">
+          <div class="level" id="risk-level">—</div>
+          <div class="caption" id="risk-caption">Open a position to activate risk tracking.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Current Wave Count</h2>
+      <div class="row"><span>Structure</span><span class="v" id="wave-label">—</span></div>
+      <div class="row"><span>Confidence</span><span class="v" id="wave-confidence">—</span></div>
+      <div class="row"><span>Rule check</span><span class="v" id="wave-valid">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Invalidation &amp; Targets</h2>
+      <div class="row"><span>Invalidation level</span><span class="v" id="inv-level">—</span></div>
+      <div id="inv-note" style="font-size:11.5px;color:var(--muted);margin:6px 0 10px;">—</div>
+      <div id="targets">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Alerts</h2>
+      <div id="alerts">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Active Liquidation Audit Log</h2>
+      <div id="audit-log">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const chartEl = document.getElementById('chart');
+const chartWrapEl = document.getElementById('chart-wrap');
+const chart = LightweightCharts.createChart(chartEl, {
+  layout: { background: { color: '#0b0e14' }, textColor: '#e8eaed' },
+  grid: { vertLines: { color: '#1a1f2b' }, horzLines: { color: '#1a1f2b' } },
+  timeScale: { timeVisible: true, secondsVisible: false },
+});
+const candleSeries = chart.addCandlestickSeries({
+  upColor: '#26a69a', downColor: '#ef5350',
+  borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+});
+new ResizeObserver(entries => {
+  const { width, height } = entries[0].contentRect;
+  chart.resize(width, height);
+  positionBufferZone(lastPortfolio);
+}).observe(chartEl);
+
+let priceLines = [];
+let sessionOpenPrice = null;
+let lastPortfolio = null;
+
+function toChartTime(iso) {
+  return Math.floor(new Date(iso).getTime() / 1000);
+}
+
+function clearPriceLines() {
+  priceLines.forEach(l => candleSeries.removePriceLine(l));
+  priceLines = [];
+  document.querySelectorAll('.tier-label').forEach(el => el.remove());
+}
+
+function badgeFor(provider) {
+  const p = (provider || '').toLowerCase();
+  if (p === 'alpaca') return { cls: 'live', label: 'LIVE — Alpaca real-time' };
+  if (p === 'yfinance') return { cls: 'delayed', label: 'DELAYED ~15-20min — Yahoo Finance' };
+  if (p.startsWith('simulated')) return { cls: 'fake', label: 'SIMULATED — not real market data' };
+  return { cls: 'fake', label: (provider || 'unknown source').toUpperCase() };
+}
+
+function fmtMoney(n) {
+  if (n === null || n === undefined) return '—';
+  const sign = n < 0 ? '-' : '';
+  return sign + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtPct(n) {
+  if (n === null || n === undefined) return '—';
+  const sign = n >= 0 ? '+' : '';
+  return sign + n.toFixed(2) + '%';
+}
+
+// --- risk gauge ---------------------------------------------------------
+function updateGauge(ratio, riskLevel) {
+  const needle = document.getElementById('gauge-needle');
+  const levelEl = document.getElementById('risk-level');
+  const captionEl = document.getElementById('risk-caption');
+
+  let angle = 0;
+  if (ratio !== null && ratio !== undefined) {
+    const clamped = Math.max(-0.1, Math.min(1.0, ratio));
+    const t = (1.0 - clamped) / 1.1;
+    angle = -90 + t * 180;
+  }
+  needle.style.transform = `rotate(${angle}deg)`;
+
+  levelEl.textContent = riskLevel || '—';
+  levelEl.className = 'level ' + (riskLevel || '').replace(' ', '.');
+
+  if (riskLevel === 'No Position') {
+    captionEl.textContent = 'Open a position to activate risk tracking.';
+  } else if (riskLevel === 'Red' || riskLevel === 'Extreme') {
+    captionEl.textContent = 'Critical proximity to the liquidation zone.';
+  } else if (riskLevel === 'High') {
+    captionEl.textContent = 'Inside the dynamic buffer — staged de-risking may begin soon.';
+  } else {
+    captionEl.textContent = 'Position within a healthy margin range.';
+  }
+}
+
+// --- buffer zone shading (pixel-mapped from live prices) ---------------
+function positionBufferZone(portfolio) {
+  const overlay = document.getElementById('buffer-zone-overlay');
+  document.querySelectorAll('.tier-label').forEach(el => el.remove());
+
+  if (!portfolio || !portfolio.has_position) {
+    overlay.style.display = 'none';
+    return;
+  }
+  const topY = candleSeries.priceToCoordinate(portfolio.buffer_start_price);
+  const botY = candleSeries.priceToCoordinate(portfolio.liquidation_price);
+  if (topY === null || botY === null) { overlay.style.display = 'none'; return; }
+
+  const y1 = Math.min(topY, botY), y2 = Math.max(topY, botY);
+  overlay.style.display = 'block';
+  overlay.style.top = y1 + 'px';
+  overlay.style.height = Math.max(2, y2 - y1) + 'px';
+
+  (portfolio.tier_levels || []).forEach((tier, i) => {
+    const y = candleSeries.priceToCoordinate(tier.price);
+    if (y === null) return;
+    const label = document.createElement('div');
+    label.className = 'tier-label';
+    label.style.top = (y - 8) + 'px';
+    label.textContent = `Stage ${i + 1}: $${tier.price.toLocaleString(undefined, {maximumFractionDigits: 2})} · sell ${(tier.close_fraction * 100).toFixed(0)}%`;
+    chartWrapEl.appendChild(label);
+  });
+}
+
+// --- portfolio panel + order form ---------------------------------------
+function renderPortfolio(pf) {
+  const el = document.getElementById('portfolio-panel');
+  if (!pf) { el.textContent = '—'; return; }
+
+  if (!pf.has_position) {
+    el.innerHTML = `
+      <div class="row"><span>Cash</span><span class="v">${fmtMoney(pf.cash)}</span></div>
+      <div class="row"><span>Realized P&amp;L</span><span class="v ${pf.realized_pnl >= 0 ? 'pos' : 'neg'}">${fmtMoney(pf.realized_pnl)}</span></div>
+      <div class="order-form">
+        <label>Notional size (USD)</label>
+        <input type="number" id="order-notional" value="10000" min="1" />
+        <label>Leverage</label>
+        <select id="order-leverage">
+          <option>1</option><option>2</option><option selected>5</option>
+          <option>10</option><option>15</option><option>20</option>
+        </select>
+        <div class="btn-row">
+          <button class="buy" onclick="placeOrder('buy')">BUY / LONG</button>
+          <button class="sell" onclick="placeOrder('sell')">SELL / SHORT</button>
+        </div>
+        <div class="order-msg" id="order-msg"></div>
+      </div>
+    `;
+    return;
+  }
+
+  const pnlCls = pf.unrealized_pnl >= 0 ? 'pos' : 'neg';
+  el.innerHTML = `
+    <div class="row"><span>Side</span><span class="v">${pf.side.toUpperCase()} · ${pf.leverage}x</span></div>
+    <div class="row"><span>Size</span><span class="v">${pf.size.toFixed(6)}</span></div>
+    <div class="row"><span>Entry</span><span class="v">${fmtMoney(pf.entry_price)}</span></div>
+    <div class="row"><span>Mark</span><span class="v">${fmtMoney(pf.mark_price)}</span></div>
+    <div class="row"><span>Unrealized P&amp;L</span><span class="v ${pnlCls}">${fmtMoney(pf.unrealized_pnl)} (${fmtPct(pf.unrealized_pnl_pct)})</span></div>
+    <div class="row"><span>Equity ratio</span><span class="v">${(pf.equity_ratio * 100).toFixed(1)}%</span></div>
+    <div class="row"><span>Total equity</span><span class="v">${fmtMoney(pf.total_equity)}</span></div>
+    <div class="row"><span>Liquidation price</span><span class="v neg">${fmtMoney(pf.liquidation_price)}</span></div>
+    <button class="close-pos" onclick="closePosition()">Close Position</button>
+    <div class="order-msg" id="order-msg"></div>
+  `;
+}
+
+async function placeOrder(side) {
+  const notional = parseFloat(document.getElementById('order-notional').value);
+  const leverage = parseFloat(document.getElementById('order-leverage').value);
+  const msgEl = document.getElementById('order-msg');
+  try {
+    const res = await fetch('/api/order', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ side, notional_usd: notional, leverage }),
+    });
+    const data = await res.json();
+    msgEl.textContent = data.message;
+    msgEl.className = 'order-msg ' + (data.ok ? 'ok' : 'err');
+    if (data.ok) refresh();
+  } catch (e) {
+    msgEl.textContent = 'Request failed — is the server still running?';
+    msgEl.className = 'order-msg err';
+  }
+}
+
+async function closePosition() {
+  const msgEl = document.getElementById('order-msg');
+  try {
+    const res = await fetch('/api/close', { method: 'POST' });
+    const data = await res.json();
+    if (msgEl) { msgEl.textContent = data.message; msgEl.className = 'order-msg ' + (data.ok ? 'ok' : 'err'); }
+    if (data.ok) refresh();
+  } catch (e) { /* server likely restarting; next poll will recover */ }
+}
+
+// --- audit log -----------------------------------------------------------
+function renderAuditLog(entries) {
+  const el = document.getElementById('audit-log');
+  if (!entries || !entries.length) { el.innerHTML = '<div class="alert info">No liquidation activity yet.</div>'; return; }
+  el.innerHTML = entries.map(e => {
+    const time = new Date(e.ts * 1000).toLocaleTimeString();
+    return `<div class="audit-entry ${e.level}"><span class="ts">[${time}]</span><span class="msg">${e.message}</span></div>`;
+  }).join('');
+}
+
+// --- main refresh loop ----------------------------------------------------
+async function refresh() {
+  let data;
+  try {
+    const res = await fetch('/api/state');
+    data = await res.json();
+  } catch (e) {
+    document.getElementById('status').textContent = 'connection lost — retrying…';
+    return;
+  }
+
+  document.getElementById('status').textContent =
+    data.last_update ? `last update ${data.last_update}` : 'waiting for data…';
+  document.getElementById('header-sub').textContent = `${data.ticker || '{{ ticker }}'} · Real-Time Dashboard`;
+  document.getElementById('overlay-ticker').textContent = data.ticker || '{{ ticker }}';
+
+  const badge = badgeFor(data.provider);
+  document.getElementById('overlay-badge').innerHTML =
+    `<span class="source-badge ${badge.cls}">${badge.label}</span>`;
+
+  if (data.bars && data.bars.length) {
+    if (sessionOpenPrice === null) sessionOpenPrice = data.bars[0].o;
+    const price = data.last_price;
+    const chg = sessionOpenPrice ? ((price - sessionOpenPrice) / sessionOpenPrice) * 100 : 0;
+    const chgCls = chg >= 0 ? 'chg-up' : 'chg-down';
+    const chgSign = chg >= 0 ? '+' : '';
+    document.getElementById('overlay-price').innerHTML =
+      `${price.toFixed(2)} <span class="${chgCls}">${chgSign}${chg.toFixed(2)}%</span>`;
+
+    const candles = data.bars.map(b => ({
+      time: toChartTime(b.t), open: b.o, high: b.h, low: b.l, close: b.c,
+    }));
+    candleSeries.setData(candles);
+  }
+
+  clearPriceLines();
+
+  const wboxEl = document.getElementById('wave-status-box');
+  if (data.status === 'warming_up' || !data.wave_count) {
+    document.getElementById('wave-label').textContent = 'warming up…';
+    document.getElementById('wave-confidence').textContent = '—';
+    document.getElementById('wave-valid').textContent = '—';
+    document.getElementById('inv-level').textContent = '—';
+    document.getElementById('inv-note').textContent = 'Not enough confirmed pivots yet.';
+    document.getElementById('targets').textContent = '—';
+    document.getElementById('alerts').innerHTML = '';
+    wboxEl.style.display = 'none';
+  } else {
+    const wc = data.wave_count;
+    document.getElementById('wave-label').textContent =
+      `${wc.wave_type} — wave ${wc.current_wave} of 5`;
+    document.getElementById('wave-confidence').textContent = wc.confidence;
+    document.getElementById('wave-valid').innerHTML = wc.is_valid
+      ? '<span class="badge valid">valid</span>'
+      : '<span class="badge invalid">rule violation</span>';
+
+    const pred = data.prediction;
+    if (pred) {
+      document.getElementById('inv-level').textContent = pred.invalidation_level.toFixed(2);
+      document.getElementById('inv-note').textContent = pred.invalidation_note;
+      priceLines.push(candleSeries.createPriceLine({
+        price: pred.invalidation_level, color: '#ef5350', lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Dashed, title: 'invalidation',
+      }));
+
+      const targetsEl = document.getElementById('targets');
+      if (pred.targets && pred.targets.length) {
+        targetsEl.innerHTML = pred.targets.map(t => `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:12.5px;">${t.label}</div>
+            <div class="v" style="font-size:13.5px;">${t.low.toFixed(2)} – ${t.high.toFixed(2)}</div>
+          </div>
+        `).join('');
+        pred.targets.forEach(t => {
+          priceLines.push(candleSeries.createPriceLine({
+            price: t.high, color: '#d29922', lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dotted, title: 'target',
+          }));
+        });
+      } else {
+        targetsEl.textContent = 'No target zone for the current wave yet.';
+      }
+    }
+
+    wboxEl.style.display = 'block';
+    const violationsNote = wc.is_valid ? '' : `<div class="muted">⚠ ${wc.violations.join('; ')}</div>`;
+    wboxEl.innerHTML = `<b>Elliott Wave Status:</b> ${wc.wave_type}, wave ${wc.current_wave} of 5
+      (confidence ${(wc.confidence * 100).toFixed(0)}%).${violationsNote}`;
+
+    // pivot markers (1)(2)(3)... on the chart
+    if (wc.pivots && wc.pivots.length) {
+      candleSeries.setMarkers(wc.pivots.map((p, i) => ({
+        time: toChartTime(p.t),
+        position: p.kind === 'high' ? 'aboveBar' : 'belowBar',
+        color: '#d29922', shape: p.kind === 'high' ? 'arrowDown' : 'arrowUp',
+        text: String(i),
+      })));
+    }
+  }
+
+  const alertsEl = document.getElementById('alerts');
+  if (data.alerts && data.alerts.length) {
+    alertsEl.innerHTML = data.alerts.map(a =>
+      `<div class="alert ${a.level}">${a.message}</div>`
+    ).join('');
+  } else {
+    alertsEl.innerHTML = '<div class="alert info">No alerts.</div>';
+  }
+
+  // portfolio / risk gauge / liquidation lines / buffer zone / audit log
+  const pf = data.portfolio;
+  lastPortfolio = pf;
+  renderPortfolio(pf);
+  renderAuditLog(pf ? pf.audit_log : []);
+
+  if (pf && pf.has_position) {
+    updateGauge(pf.equity_ratio, pf.risk_level);
+    priceLines.push(candleSeries.createPriceLine({
+      price: pf.liquidation_price, color: '#ef5350', lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.Solid, title: 'TERMINAL LIQUIDATION',
+    }));
+    priceLines.push(candleSeries.createPriceLine({
+      price: pf.buffer_start_price, color: '#e8863c', lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, title: 'buffer start',
+    }));
+  } else {
+    updateGauge(null, pf ? pf.risk_level : null);
+  }
+  positionBufferZone(pf);
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

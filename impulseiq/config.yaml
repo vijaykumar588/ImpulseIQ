@@ -1,0 +1,31 @@
+# IMPULSEIQ configuration
+
+data_source: yfinance   # swap to your own DataSource implementation's key
+
+pivot_detection:
+  zigzag_threshold_pct: 1.5   # minimum swing size (%) to count as a pivot
+                                # lower = more sensitive / noisier; higher = smoother
+                                # (was 4.0 — too high to ever form 5+ pivots against
+                                # realistic intraday/simulated volatility; see note below)
+
+wave_rules:
+  min_wave3_extension: 1.0     # Wave 3 must be >= 1.0x Wave 1 (hard rule)
+  wave4_overlap_tolerance_pct: 0.0   # 0 = strict no-overlap (hard rule, standard EW)
+
+alerts:
+  invalidation_buffer_pct: 0.5   # warn when price is within this % of the
+                                   # invalidation level, before it's actually broken
+  sudden_move_atr_multiple: 3.0   # flag a bar as a "sudden change" if its range
+                                    # exceeds this multiple of the recent ATR
+
+leverage_manager:
+  maintenance_margin_ratio: 0.25   # hard liquidation line (equity/position value)
+  buffer_start_ratio: 0.45          # dynamic buffer begins tiering down from here
+  tiers:                             # (equity_ratio_floor, % of remaining position to close)
+    - [0.45, 0.10]
+    - [0.38, 0.15]
+    - [0.31, 0.25]
+    - [0.25, 0.50]   # last tier before hard maintenance line
+
+paper_trading:
+  starting_cash: 100000   # paper $ balance the live dashboard starts with
